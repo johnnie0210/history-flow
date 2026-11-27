@@ -1,6 +1,6 @@
 /* Offline cache. Network first, so edits to content.md show up as soon as the phone is online. */
-var CACHE = 'history-flow-v1';
-var FILES = ['./', 'index.html', 'styles.css', 'content.md', 'js/core.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+var CACHE = 'history-flow-v2';
+var FILES = ['./', 'index.html', 'styles.css', 'content.md', 'details.json','js/core.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));

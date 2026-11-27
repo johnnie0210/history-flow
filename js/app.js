@@ -5,7 +5,8 @@
   var STORE_KEY = 'history-flow.v1';
   var $ = function (id) { return document.getElementById(id); };
 
-  var data, cards, questions, topicById = {};
+  var data, cards, questions, topicById = {}, details = {};
+  var DETAIL_KEYS = ['요약', '배경', '전개', '결과', '비고'];
   var store = loadStore();
 
   // ---------- storage ----------
@@ -54,12 +55,16 @@
     });
     select.innerHTML = html;
   }
-  function flowHtml(topic, q) {
+  // linkSteps: steps with a detail entry open the detail sheet (flow list only)
+  function flowHtml(topic, q, linkSteps) {
     var h = '';
     topic.flows.forEach(function (f) {
       if (f.label) { h += '<div class="tl-label">' + hl(f.label, q) + '</div>'; }
       h += '<ol class="tl">' + f.steps.map(function (s) {
-        return '<li><b>' + hl(s.name, q) + '</b>' + (s.detail ? '<small>' + hl(s.detail, q) + '</small>' : '') + '</li>';
+        var link = linkSteps && details[s.name];
+        return '<li' + (link ? ' class="has-detail" role="button" tabindex="0" data-step="' + esc(s.name) + '"' : '') + '><b>' + hl(s.name, q) + '</b>' +
+          (link ? '<span class="more" aria-hidden="true">›</span>' : '') +
+          (s.detail ? '<small>' + hl(s.detail, q) + '</small>' : '') + '</li>';
       }).join('') + '</ol>';
     });
     topic.cores.forEach(function (c) { h += '<div class="core">핵심: ' + c.map(function (x) { return hl(x, q); }).join(' → ') + '</div>'; });
@@ -130,7 +135,7 @@
       front = '<div class="card-type"><span>주제 · ' + esc(t.era) + '</span></div><div class="card-big">' + esc(t.title) + '</div>' +
         '<div class="card-detail">흐름 ' + t.flows.length + '개 · ' + steps + '단계' + (t.pairs.length ? ' · 짝 ' + t.pairs.length + '개' : '') + '</div>' +
         '<div class="card-ask">전체 흐름을 떠올려 보세요</div><div class="card-hint">탭해서 확인</div>';
-      back = '<div class="topic-title">' + esc(t.title) + '</div>' + flowHtml(t, '');
+      back = '<div class="topic-title">' + esc(t.title) + '</div>' + flowHtml(t, '', true);
       scrollBack = true;
     }
     return { front: front, back: back, scrollBack: scrollBack };
@@ -184,8 +189,23 @@
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { swiped = true; move(dx < 0 ? 1 : -1); }
     touch = null;
   });
-  $('flip-card').addEventListener('click', function () { if (swiped) { swiped = false; return; } flip(); });
-  $('flip-card').addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); } });
+  // A linked step on the flipped topic card opens the detail sheet instead of flipping
+  function cardStepLink(e) {
+    var li = e.target.closest('li.has-detail');
+    return li && $('flip-card').classList.contains('flipped') ? li.getAttribute('data-step') : null;
+  }
+  $('flip-card').addEventListener('click', function (e) {
+    if (swiped) { swiped = false; return; }
+    var step = cardStepLink(e);
+    if (step) { openDetail(step); return; }
+    flip();
+  });
+  $('flip-card').addEventListener('keydown', function (e) {
+    if (e.key !== ' ' && e.key !== 'Enter') { return; }
+    e.preventDefault();
+    var step = cardStepLink(e);
+    if (step) { openDetail(step); } else { flip(); }
+  });
   document.addEventListener('keydown', function (e) {
     if ($('view-card').classList.contains('hidden') || /INPUT|SELECT/.test(document.activeElement.tagName)) { return; }
     if (e.key === 'ArrowRight') { move(1); } else if (e.key === 'ArrowLeft') { move(-1); }
@@ -359,11 +379,35 @@
     $('list-body').innerHTML = shown.map(function (t) {
       var f = t.flows[0], sub = f ? f.steps[0].name + ' → … → ' + f.steps[f.steps.length - 1].name : '';
       return '<details class="entry"' + (q ? ' open' : '') + '><summary><span class="no">' + t.no + '</span><span class="tt">' + hl(t.title, q) +
-        '<span class="sub">' + esc(t.era) + ' · ' + esc(sub) + '</span></span></summary><div class="body">' + flowHtml(t, q) + '</div></details>';
+        '<span class="sub">' + esc(t.era) + ' · ' + esc(sub) + '</span></span></summary><div class="body">' + flowHtml(t, q, true) + '</div></details>';
     }).join('') || '<p class="empty">찾는 내용이 없어요.</p>';
   }
   $('list-search').addEventListener('input', renderList);
   bindSeg('list-era-seg', renderList);
+
+  // ---------- event detail sheet ----------
+  function openDetail(name) {
+    var d = details[name]; if (!d) { return; }
+    var tops = data.topics.filter(function (t) { return t.flows.some(function (f) { return f.steps.some(function (s) { return s.name === name; }); }); });
+    $('detail-title').textContent = name;
+    $('detail-topics').textContent = tops.map(function (t) { return t.era + ' · ' + t.title; }).join('  /  ');
+    $('detail-body').innerHTML = DETAIL_KEYS.filter(function (k) { return d[k]; }).map(function (k) {
+      return '<div class="dt-sec' + (k === '비고' ? ' note' : '') + '"><h3>' + (k === '비고' ? '시험 포인트' : k) + '</h3><p>' + esc(d[k]).replace(/\n/g, '<br>') + '</p></div>';
+    }).join('');
+    $('detail-backdrop').classList.remove('hidden');
+    $('detail-backdrop').querySelector('.sheet').scrollTop = 0;
+  }
+  function closeDetail() { $('detail-backdrop').classList.add('hidden'); }
+  $('list-body').addEventListener('click', function (e) {
+    var li = e.target.closest('li.has-detail'); if (li) { openDetail(li.getAttribute('data-step')); }
+  });
+  $('list-body').addEventListener('keydown', function (e) {
+    var li = e.target.closest('li.has-detail');
+    if (li && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(li.getAttribute('data-step')); }
+  });
+  $('detail-backdrop').addEventListener('click', function (e) { if (e.target === $('detail-backdrop')) { closeDetail(); } });
+  $('btn-detail-close').addEventListener('click', closeDetail);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeDetail(); } });
 
   // ---------- info sheet ----------
   function openInfo() {
@@ -419,9 +463,16 @@
     buildDeck(); updateQuizInfo();
   }
 
+  // details.json is optional: without it the app works as before
+  var detailsReady = fetch('details.json', { cache: 'no-cache' })
+    .then(function (r) { return r.ok ? r.json() : {}; })
+    .then(function (d) { details = d || {}; })
+    .catch(function () { details = {}; });
+
   fetch('content.md', { cache: 'no-cache' })
     .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); })
-    .then(init)
+    .then(function (md) { init(md); return detailsReady; })
+    .then(function () { if (!$('view-list').classList.contains('hidden')) { renderList(); } })
     .catch(function () {
       $('topbar-sub').textContent = '내용을 불러오지 못했어요';
       $('card-front').innerHTML = '<p class="empty">content.md를 불러오지 못했어요. 인터넷 연결을 확인하거나, PC에서는 웹 서버로 열어 주세요.</p>';

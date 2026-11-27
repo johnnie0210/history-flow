@@ -13,6 +13,15 @@ const names = f => f.steps.map(s => s.name);
 // Seeded random so failures can be reproduced
 function rng(seed) { return () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648); }
 
+test('every details.json entry matches a flow step and has the 4 main sections', () => {
+  const details = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'details.json'), 'utf8'));
+  const stepNames = new Set(data.topics.flatMap(t => t.flows.flatMap(f => f.steps.map(s => s.name))));
+  Object.entries(details).forEach(([name, d]) => {
+    assert.ok(stepNames.has(name), name + ' is not a step in content.md');
+    ['요약', '배경', '전개', '결과'].forEach(k => assert.ok(d[k] && d[k].trim(), name + ' missing ' + k));
+  });
+});
+
 test('splits arrows outside parentheses only', () => {
   assert.deepStrictEqual(C.splitArrows('A(x → y) → B'), ['A(x → y)', 'B']);
   assert.deepStrictEqual(C.parseStep('교조신원운동(삼례집회 → 서울 복합상소)'), { name: '교조신원운동', detail: '삼례집회 → 서울 복합상소' });
